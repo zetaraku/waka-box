@@ -1,84 +1,74 @@
-require("dotenv").config();
 const { WakaTimeClient, RANGE } = require("wakatime-client");
 const { Octokit } = require("@octokit/rest");
+require("dotenv").config();
 
-const {
-  GIST_ID: gistId,
-  GH_TOKEN: githubToken,
-  WAKATIME_API_KEY: wakatimeApiKey
-} = process.env;
+const wakatime = new WakaTimeClient(process.env.WAKATIME_API_KEY);
+const octokit = new Octokit({ auth: `token ${process.env.GH_TOKEN}` });
 
-const wakatime = new WakaTimeClient(wakatimeApiKey);
+const MAX_GIST_PREVIEW_LINES = 5;
 
-const octokit = new Octokit({ auth: `token ${githubToken}` });
+(async function main() {
+  const { data: stats } = await wakatime.getMyStats({
+    range: RANGE.LAST_7_DAYS
+  });
 
-async function main() {
-  const stats = await wakatime.getMyStats({ range: RANGE.LAST_7_DAYS });
-  await updateGist(stats);
-}
+  const title = "📊 Weekly development breakdown";
+  const content = formatStats(stats);
 
-function trimRightStr(str, len) {
-  // Ellipsis takes 3 positions, so the index of substring is 0 to total length - 3.
-  return str.length > len ? str.substring(0, len - 3) + "..." : str;
-}
-
-async function updateGist(stats) {
-  let gist;
-  try {
-    gist = await octokit.gists.get({ gist_id: gistId });
-  } catch (error) {
-    console.error(`Unable to get gist\n${error}`);
-  }
-
-  const lines = [];
-  for (let i = 0; i < Math.min(stats.data.languages.length, 5); i++) {
-    const data = stats.data.languages[i];
-    const { name, percent, text: time } = data;
-
-    const line = [
-      trimRightStr(name, 10).padEnd(10),
-      time.padEnd(14),
-      generateBarChart(percent, 21),
-      String(percent.toFixed(1)).padStart(5) + "%"
-    ];
-
-    lines.push(line.join(" "));
-  }
-
-  if (lines.length == 0) return;
-
-  try {
-    // Get original filename to update that same file
-    const filename = Object.keys(gist.data.files)[0];
-    await octokit.gists.update({
-      gist_id: gistId,
-      files: {
-        [filename]: {
-          filename: `📊 Weekly development breakdown`,
-          content: lines.join("\n")
-        }
-      }
-    });
-  } catch (error) {
-    console.error(`Unable to update gist\n${error}`);
-  }
-}
-
-function generateBarChart(percent, size) {
-  const syms = "░▏▎▍▌▋▊▉█";
-
-  const frac = Math.floor((size * 8 * percent) / 100);
-  const barsFull = Math.floor(frac / 8);
-  if (barsFull >= size) {
-    return syms.substring(8, 9).repeat(size);
-  }
-  const semi = frac % 8;
-
-  return [syms.substring(8, 9).repeat(barsFull), syms.substring(semi, semi + 1)]
-    .join("")
-    .padEnd(size, syms.substring(0, 1));
-}
-
-(async () => {
-  await main();
+  await updateGist(title, content);
 })();
+
+function truncateText(text = "", maxLength = 0) {
+  return text.length > maxLength
+    ? text.substring(0, maxLength - 3) + "..."
+    : text;
+}
+
+function makePercentageBar(percent = 0, size = 10) {
+  return "█".repeat(Math.round(size * (percent / 100))).padEnd(size, "░");
+}
+
+function formatStats(stats) {
+  const columnWidth = {
+    name: "JavaScript".length,
+    text: "23 hrs 59 mins".length,
+    bar: "██████████░░░░░░░░░░".length,
+    percent: "100.0%".length
+  };
+
+  const lines = (stats.languages ?? [])
+    .slice(0, MAX_GIST_PREVIEW_LINES)
+    .map(language =>
+      [
+        truncateText(language.name, columnWidth["name"]).padEnd(
+          columnWidth["name"],
+          " "
+        ),
+        language.text.padEnd(columnWidth["text"], " "),
+        makePercentageBar(language.percent, columnWidth["bar"]),
+        String(language.percent.toFixed(1) + "%").padStart(
+          columnWidth["percent"],
+          " "
+        )
+      ].join("  ")
+    );
+
+  return lines.length > 0 ? lines.join("\n") : "No data available.";
+}
+
+async function updateGist(title = "", text = "") {
+  const { data: gist } = await octokit.gists.get({
+    gist_id: process.env.GIST_ID
+  });
+  const [filename] = Object.keys(gist.files);
+
+  await octokit.gists.update({
+    gist_id: process.env.GIST_ID,
+    files: {
+      [filename]: {
+        filename: title,
+        content: text
+      }
+    }
+  });
+}
