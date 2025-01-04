@@ -11416,9 +11416,10 @@
     const m = 5;
     (async function main() {
       const { data: e } = await s.getMyStats({ range: p.LAST_7_DAYS });
-      const i = "📊 Weekly development breakdown";
-      const l = formatStats(e);
-      await updateGist(i, l);
+      const i = `${e.start.slice(0, 10)} - ${e.end.slice(0, 10)}`;
+      const l = `📊 WakaTime (${i})`;
+      const m = formatStats(e);
+      await updateGist(l, m);
     })();
     function truncateText(e = "", p = 0) {
       return e.length > p ? e.substring(0, p - 3) + "..." : e;

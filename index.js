@@ -12,7 +12,8 @@ const MAX_GIST_PREVIEW_LINES = 5;
     range: RANGE.LAST_7_DAYS
   });
 
-  const title = "📊 Weekly development breakdown";
+  const rangeText = `${stats.start.slice(0, 10)} - ${stats.end.slice(0, 10)}`;
+  const title = `📊 WakaTime (${rangeText})`;
   const content = formatStats(stats);
 
   await updateGist(title, content);
